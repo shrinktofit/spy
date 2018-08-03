@@ -1,0 +1,22 @@
+{
+  "name": "spy",
+  "version": "1.0.0",
+  "description": "A TypeScript type definition file generator from ECMA Script 2015 file.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shrinktofit/spy.git"
+  },
+  "author": "Leslie Leigh",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/shrinktofit/spy/issues"
+  },
+  "homepage": "https://github.com/shrinktofit/spy#readme",
+  "dependencies": {
+    "esprima": "^4.0.1"
+  }
+}
