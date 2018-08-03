@@ -1,0 +1,1 @@
+A TypeScript type definition file generator from ECMA Script 2015 file.
