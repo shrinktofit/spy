@@ -117,4 +117,4 @@ function _injectProperties(classDeclaration: ts.ClassDeclaration, typeChecker: t
         console.log(`${classDeclaration.name ? classDeclaration.name.text : "<unnamed>"} - ${ps}`);
 }
 
-main(String.raw`E:\Repos\Cocos\engine-3d\lib`, String.raw`D:\out`);
+main(String.raw`.\testcases\engine-3d\lib`, String.raw`.\out\engine-3d\lib`);
