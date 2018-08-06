@@ -25,11 +25,7 @@ function main(inputDir: string, outputDir: string) {
         let output = path.resolve(outputDir, file);
         output = output.replace(".js", ".ts");
         let outputParentDir = path.dirname(output);
-        mkdirp(outputParentDir, (err, made) => {
-            if (err) {
-                console.log(`Failed to create output directory ${outputParentDir}.`);
-            }
-        });
+        mkdirp.sync(outputParentDir);
         files.push(output);
         fs.copyFileSync(input, output);
     });
