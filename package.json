@@ -17,6 +17,6 @@
   },
   "homepage": "https://github.com/shrinktofit/spy#readme",
   "dependencies": {
-    "@types/node": "^10.5.5",
+    "@types/node": "^10.5.5"
   }
 }
