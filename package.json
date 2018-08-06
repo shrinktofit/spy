@@ -17,8 +17,6 @@
   },
   "homepage": "https://github.com/shrinktofit/spy#readme",
   "dependencies": {
-    "@types/esprima": "^4.0.2",
     "@types/node": "^10.5.5",
-    "esprima": "^4.0.1"
   }
 }
