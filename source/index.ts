@@ -1,4 +1,6 @@
 import * as fs from 'fs';
+import * as path from 'path';
+import mkdirp from 'mkdirp';
 import * as ts from 'typescript';
 
 class Spy {
@@ -11,7 +13,9 @@ class Spy {
                 outputPath,
                 new SourceConverter(data.toString()).print(),
                 (err: NodeJS.ErrnoException) => {
-                    console.log(`Error writing file: ${err.message}`);
+                    if (err) {
+                        console.log(`Error writing file: ${err.message}`);
+                    }
                 });
         });
     }
@@ -79,5 +83,40 @@ class SourceConverter {
     }
 }
 
-Spy.process('testcases/vec3.js', 'out/vec3.ts');
-Spy.process('testcases/complex-skinning-animation.js', 'out/complex-skinning-animation.ts');
+function main(inputDir: string, outputDir: string) {
+    let rootDir = inputDir;
+
+    let forEachFile = (dir: string, fx: (file: string) => void) => {
+        fs.readdir(dir, (err, files) => {
+            if (err) {
+                return;
+            }
+            for (let file of files) {
+                file = path.resolve(dir, file);
+                fs.stat(file, (err, stat) => {
+                    if (stat && stat.isDirectory()) {
+                        forEachFile(file, fx);
+                    }
+                    else if (file.endsWith(".js")) {
+                        fx(path.relative(rootDir, file));
+                    }
+                });
+            }
+        });
+    };
+
+    forEachFile(inputDir, (file) => {
+        let input = path.resolve(inputDir, file);
+        let output = path.resolve(outputDir, file);
+        output = output.replace(".js", ".ts");
+        let outputParentDir = path.dirname(output);
+        mkdirp(outputParentDir, (err, made) => {
+            if (err) {
+                console.log(`Failed to create output directory ${outputParentDir}.`);
+            }
+        });
+        Spy.process(input, output);
+    });
+}
+
+main(String.raw`E:\Repos\Cocos\engine-3d\lib`, String.raw`D:\out`);
