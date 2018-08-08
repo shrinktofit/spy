@@ -30,39 +30,41 @@ function main(inputDir: string, outputDir: string) {
         fs.copyFileSync(input, output);
     });
 
-    let program = ts.createProgram(files, {});
-    let typeChecker = program.getTypeChecker();
-
     let printer = ts.createPrinter({
         newLine: ts.NewLineKind.LineFeed
     });
 
-    for (let file of files) {
-        let sourceFile = program.getSourceFile(file);
-        if (!sourceFile) {
-            console.log(`Cannot get source file for ${file}`);
-            continue;
+    let passes = [
+        [
+            { name: "Extract schema", method: _extractSchema },
+            { name: "Inject old-style class member", method: _injectOldStyleClassMember },
+            { name: "Inject properties", method: _injectProperties }
+        ],
+        [
+            { name: "Inject apperant type", method: _injectApperantType },
+            { name: "Make explicit any", method: _explicitAny }
+        ]
+    ];
+
+    for (let pass of passes) {
+        let program = ts.createProgram(files, {});
+        let typeChecker = program.getTypeChecker();
+        for (let file of files) {
+            let sourceFile = program.getSourceFile(file);
+            if (!sourceFile) {
+                console.log(`Cannot get source file for ${file}`);
+                continue;
+            }
+
+            console.log(`\n==== ${path.relative(outputDir, sourceFile.fileName)} ====\n`);
+
+            for (let task of pass) {
+                console.log(`* ${task.name}`);
+                task.method(sourceFile, typeChecker);
+            }
+
+            fs.writeFileSync(sourceFile.fileName, printer.printFile(sourceFile));
         }
-
-        console.log(`\n==== ${path.relative(outputDir, sourceFile.fileName)} ====\n`);
-
-        console.log(`* Extract schema`);
-        _extractSchema(sourceFile, typeChecker);
-
-        console.log("");
-
-        console.log(`* Inject old style class member`);
-        _injectOldStyleClassMember(sourceFile, typeChecker);
-
-        console.log("");
-
-        //console.log(`* Explicit any\n`);
-        _explicitAny(sourceFile);
-
-        console.log(`* Inject properties`);
-        _injectProperties(sourceFile, typeChecker);
-
-        fs.writeFileSync(sourceFile.fileName, printer.printFile(sourceFile));
     }
 }
 
@@ -70,6 +72,30 @@ function _forEach(node: ts.Node, fx: (node: ts.Node) => void) {
     fx(node);
     ts.forEachChild(node, (childNode) => {
         _forEach(childNode, fx);
+    });
+}
+
+function _injectApperantType(sourceFile: ts.SourceFile, typeChecker: ts.TypeChecker) {
+    _forEach(sourceFile, (node: ts.Node) => {
+        if (ts.isClassDeclaration(node)) {
+            if (node.name && node.name.text == "vec3") {
+                for (let member of node.members) {
+                    if (ts.isMethodDeclaration(member)) {
+                        continue;
+                    }
+                    if (member.name) {
+                        let symbol = typeChecker.getSymbolAtLocation(member.name);
+                        let type = typeChecker.getTypeAtLocation(member.name);
+                        let apperantType = typeChecker.getApparentType(type);
+                        let widenedType = typeChecker.getWidenedType(type);
+
+                        if (apperantType.isNumberLiteral()) {
+                            continue;
+                        }
+                    }
+                }
+            }
+        }
     });
 }
 
@@ -83,11 +109,25 @@ function _explicitAny(sourceFile: ts.SourceFile) {
     _forEach(sourceFile, (node) => {
         if (ts.isParameter(node) ||
             (ts.isVariableDeclaration(node) && !isForInVarDecl(node) && !isCatchVarDecl(node))) {
+            if (node.initializer &&
+                (ts.isNumericLiteral(node.initializer) ||
+                    ts.isStringLiteral(node.initializer) ||
+                    node.initializer.kind == ts.SyntaxKind.TrueKeyword ||
+                    node.initializer.kind == ts.SyntaxKind.FalseKeyword)) {
+                // if (ts.isIdentifier(node.name)) {
+                //     console.log(`Skip ${node.name.text}`);
+                // }
+                return;
+            }
             if (!node.type) {
-                node.type = ts.createKeywordTypeNode(ts.SyntaxKind.AnyKeyword);
+                node.type = _createAnyTypeNode();
             }
         }
     });
+}
+
+function _createAnyTypeNode() {
+    return ts.createKeywordTypeNode(ts.SyntaxKind.AnyKeyword);
 }
 
 function _extractSchema(sourceFile: ts.SourceFile, typeChecker: ts.TypeChecker) {
@@ -172,11 +212,10 @@ function _extractSchema(sourceFile: ts.SourceFile, typeChecker: ts.TypeChecker) 
         let schemaBody = schemaExpr.right as ts.ObjectLiteralExpression;
 
         console.log(`${hostClassExpr.getText()}`);
-        let hostClass = typeChecker.getSymbolAtLocation(hostClassExpr);
-        if (!hostClass || !hostClass.valueDeclaration) {
-            // WARNING
+        let hostClassDecl = _getValueDeclaration(hostClassExpr, typeChecker);
+        if (!hostClassDecl) {
+            console.log(`Warning: Cannot find value declaration of this schema's host class.`);
         } else {
-            let hostClassDecl = hostClass.valueDeclaration;
             if (!ts.isClassDeclaration(hostClassDecl)) {
                 // WARNING
             } else {
@@ -215,22 +254,46 @@ function _injectOldStyleClassMember(sourceFile: ts.SourceFile, typeChecker: ts.T
                 for (let stmt of node.parent.statements) {
                     if (ts.isExpressionStatement(stmt) &&
                         ts.isBinaryExpression(stmt.expression) &&
-                        stmt.expression.operatorToken.kind  == ts.SyntaxKind.EqualsToken &&
+                        stmt.expression.operatorToken.kind == ts.SyntaxKind.EqualsToken &&
                         ts.isPropertyAccessExpression(stmt.expression.left)) {
-                        let cls = typeChecker.getSymbolAtLocation(stmt.expression.left.expression);
+                        let clsExpr = stmt.expression.left.expression;
+                        let isStatic = true;
+                        if (ts.isPropertyAccessExpression(clsExpr) &&
+                            clsExpr.name.text == "prototype") {
+                            clsExpr = clsExpr.expression;
+                            isStatic = false;
+                        }
+                        let cls = typeChecker.getSymbolAtLocation(clsExpr);
                         if (cls && cls.valueDeclaration == node) {
                             if (node.name) {
+                                if (isStatic) {
+                                    members.push(ts.createProperty(
+                                        undefined,
+                                        [ts.createModifier(ts.SyntaxKind.StaticKeyword)],
+                                        stmt.expression.left.name.text,
+                                        undefined,
+                                        ts.createKeywordTypeNode(ts.SyntaxKind.AnyKeyword),
+                                        stmt.expression.right
+                                    ));
+                                    _removeStmtFromSourceFile(stmt, node.parent);
+                                } else if (ts.isFunctionExpression(stmt.expression.right)) {
+                                    members.push(ts.createMethod(
+                                        undefined, //decorators
+                                        undefined, // modifiers
+                                        undefined, // asteriskToken,
+                                        stmt.expression.left.name.text, //name,
+                                        undefined, // questionToken,
+                                        undefined, // typeParameters
+                                        stmt.expression.right.parameters, // parameters
+                                        undefined, // type
+                                        stmt.expression.right.body, // body
+                                    ));
+                                    _removeStmtFromSourceFile(stmt, node.parent);
+                                }
                                 console.log(`Old-style ${node.name.text}.${stmt.expression.left.name.text}`);
-                                members.push(ts.createProperty(
-                                    undefined,
-                                    [ts.createModifier(ts.SyntaxKind.StaticKeyword)],
-                                    stmt.expression.left.name.text,
-                                    undefined,
-                                    ts.createKeywordTypeNode(ts.SyntaxKind.AnyKeyword),
-                                    stmt.expression.right
-                                ));
-                                _removeStmtFromSourceFile(stmt, node.parent);
                             }
+                        } else {
+                            console.log(`Warning: .${stmt.expression.left.name.text}'s class not expected`);
                         }
                     }
                 }
@@ -266,8 +329,12 @@ function _removeStmtFromSourceFile(statement: ts.Statement, sourceFile: ts.Sourc
 function _injectPropertiesOneClass(classDeclaration: ts.ClassDeclaration, typeChecker: ts.TypeChecker) {
     let nonPropertyMembers = new Set<string>();
 
+    // if (classDeclaration.name && classDeclaration.name.text == "AssetTask") {
+    //     debugger;
+    // }
+
     let collectNonPropertyMembers = (classDecl: ts.ClassDeclaration) => {
-        for (let member of classDeclaration.members) {
+        for (let member of classDecl.members) {
             if (member.name as ts.Identifier) {
                 nonPropertyMembers.add((member.name as ts.Identifier).text);
             }
@@ -277,11 +344,9 @@ function _injectPropertiesOneClass(classDeclaration: ts.ClassDeclaration, typeCh
             for (let heri of classDecl.heritageClauses) {
                 if (heri.token == ts.SyntaxKind.ExtendsKeyword) {
                     for (let type of heri.types) {
-                        let base = typeChecker.getSymbolAtLocation(type.expression);
-                        if (base && base.valueDeclaration) {
-                            if (ts.isClassDeclaration(base.valueDeclaration)) {
-                                collectNonPropertyMembers(base.valueDeclaration);
-                            }
+                        let baseDecl = _getValueDeclaration(type.expression, typeChecker);
+                        if (baseDecl && ts.isClassDeclaration(baseDecl)) {
+                            collectNonPropertyMembers(baseDecl);
                         } else {
                             // DO IT: warnning?
                         }
@@ -293,35 +358,73 @@ function _injectPropertiesOneClass(classDeclaration: ts.ClassDeclaration, typeCh
 
     collectNonPropertyMembers(classDeclaration);
 
-    let thisMembers = new Set<string>();
+    let thisMembers = new Map<string, ts.TypeNode | undefined>();
+    let thisMebersDebug = new Map<string, string>();
     _forEach(classDeclaration, (node: ts.Node) => {
         if (ts.isPropertyAccessExpression(node)) {
             if (node.expression.kind == ts.SyntaxKind.ThisKeyword) {
-                thisMembers.add(node.name.text);
+                let type: ts.TypeNode | undefined = undefined;
+                // let debugTypeName = "any";
+                // if (node.parent && ts.isBinaryExpression(node.parent) && node.parent.operatorToken.kind == ts.SyntaxKind.EqualsToken) {
+                //     let valNode = node.parent.right;
+                //     if (ts.isNumericLiteral(valNode)) {
+                //         type = ts.createKeywordTypeNode(ts.SyntaxKind.NumberKeyword);
+                //         debugTypeName = "number";
+                //     } else if (ts.isStringLiteral(valNode)) {
+                //         type = ts.createKeywordTypeNode(ts.SyntaxKind.StringKeyword);
+                //         debugTypeName = "string";
+                //     } else if (valNode.kind == ts.SyntaxKind.TrueKeyword ||
+                //         valNode.kind == ts.SyntaxKind.FalseKeyword) {
+                //         type = ts.createKeywordTypeNode(ts.SyntaxKind.BooleanKeyword);
+                //         debugTypeName = "boolean";
+                //     }
+                // }
+                let oldType = thisMembers.get(node.name.text);
+                if (oldType) {
+                    return; // DO IT
+                }
+                thisMembers.set(node.name.text, type);
+                //thisMebersDebug.set(node.name.text, debugTypeName);
             }
         }
     });
 
     let properties = [];
-    let ps = [];
     for (let thisMember of thisMembers) {
-        if (!nonPropertyMembers.has(thisMember)) {
-            ps.push(thisMember);
+        if (!nonPropertyMembers.has(thisMember["0"])) {
+            //console.log(`Deduce ${classDeclaration.name ? classDeclaration.name.text : "<unnamed-class>"}.${thisMember["0"]} as ${thisMebersDebug.get(thisMember["0"])}`);
             properties.push(ts.createProperty(
                 undefined,
                 undefined,
-                thisMember,
+                thisMember["0"],
                 undefined,
-                ts.createKeywordTypeNode(ts.SyntaxKind.AnyKeyword),
+                thisMember["1"] ? thisMember["1"] : _createAnyTypeNode(),
                 undefined
             ));
         }
     }
-    classDeclaration.members = ts.createNodeArray(
-        classDeclaration.members.concat(properties));
-
-    if (properties.length != 0)
-        console.log(`${classDeclaration.name ? classDeclaration.name.text : "<unnamed-class>"} - ${ps}`);
+    _addClassMembers(properties, classDeclaration);
 }
 
-main(String.raw`.\testcases\engine-3d\lib`, String.raw`.\out\engine-3d\lib`);
+function _getValueDeclaration(node: ts.Node, typeChecker: ts.TypeChecker): ts.Declaration | undefined {
+    let base = typeChecker.getSymbolAtLocation(node);
+    if (base) {
+        if (base.valueDeclaration) {
+            return base.valueDeclaration;
+        }
+        let baseTypeSymbol = typeChecker.getDeclaredTypeOfSymbol(base).symbol;
+        if (baseTypeSymbol) {
+            return baseTypeSymbol.valueDeclaration;
+        }
+    }
+    return undefined;
+}
+
+if (process.argv.length < 4) {
+    console.log(`No input/output path specified.`);
+    process.exit(-1);
+}
+
+let inputPath = process.argv[2];
+let outputPath = process.argv[3];
+main(inputPath, outputPath);

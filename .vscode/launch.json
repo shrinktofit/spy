@@ -9,6 +9,10 @@
             "request": "launch",
             "name": "启动程序",
             "program": "${workspaceFolder}\\out\\index.js",
+            "args": [
+                "E:\\Repos\\Cocos\\engine-3d\\lib",
+                "E:\\Tmp\\engine-3d\\lib"
+            ],
             "outFiles": [
                 "${workspaceFolder}/**/*.js"
             ]
