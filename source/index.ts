@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import mkdirp from 'mkdirp';
 import * as ts from 'typescript';
+import 'typescript/'
 
 function main(inputDir: string, outputDir: string) {
     let rootDir = inputDir;
@@ -43,6 +44,10 @@ function main(inputDir: string, outputDir: string) {
         [
             { name: "Inject apperant type", method: _injectApperantType },
             { name: "Make explicit any", method: _explicitAny }
+        ],
+        [
+            { name: "This index signature", method: _thisSignature },
+            { name: "Document & Window", method: _documentWindow }
         ]
     ];
 
@@ -109,18 +114,25 @@ function _explicitAny(sourceFile: ts.SourceFile) {
     _forEach(sourceFile, (node) => {
         if (ts.isParameter(node) ||
             (ts.isVariableDeclaration(node) && !isForInVarDecl(node) && !isCatchVarDecl(node))) {
-            if (node.initializer &&
-                (ts.isNumericLiteral(node.initializer) ||
-                    ts.isStringLiteral(node.initializer) ||
-                    node.initializer.kind == ts.SyntaxKind.TrueKeyword ||
-                    node.initializer.kind == ts.SyntaxKind.FalseKeyword)) {
-                // if (ts.isIdentifier(node.name)) {
-                //     console.log(`Skip ${node.name.text}`);
-                // }
-                return;
-            }
-            if (!node.type) {
-                node.type = _createAnyTypeNode();
+            if (ts.isParameter(node) && node.dotDotDotToken) {
+                console.log(`Found rest parameter "${(node.name as ts.Identifier).text}", make it as any[].`);
+                if (!node.type) {
+                    node.type = ts.createArrayTypeNode(_createAnyTypeNode());
+                }
+            } else {
+                if (node.initializer &&
+                    (ts.isNumericLiteral(node.initializer) ||
+                        ts.isStringLiteral(node.initializer) ||
+                        node.initializer.kind == ts.SyntaxKind.TrueKeyword ||
+                        node.initializer.kind == ts.SyntaxKind.FalseKeyword)) {
+                    // if (ts.isIdentifier(node.name)) {
+                    //     console.log(`Skip ${node.name.text}`);
+                    // }
+                    return;
+                }
+                if (!node.type) {
+                    node.type = _createAnyTypeNode();
+                }
             }
         }
     });
@@ -128,6 +140,39 @@ function _explicitAny(sourceFile: ts.SourceFile) {
 
 function _createAnyTypeNode() {
     return ts.createKeywordTypeNode(ts.SyntaxKind.AnyKeyword);
+}
+
+function _documentWindow(sourceFile: ts.SourceFile, typeChecker: ts.TypeChecker) {
+    let forbidMap = new Map<string, string[]>();
+    forbidMap.set("document", ["mozPointerLockElement"]);
+    forbidMap.set("window", [
+        "XMLHttpRequest",
+        "ActiveXObject"
+    ]);
+    _forEach(sourceFile, (node) => {
+        if (ts.isPropertyAccessExpression(node) &&
+            ts.isIdentifier(node.expression)) {
+            let li = forbidMap.get(node.expression.text);
+            if (li) {
+                if (li.indexOf(node.name.text) >= 0) {
+                    console.log(`Process ${node.expression.text}.${node.name.text}`);
+                    node.expression = ts.createPropertyAccess(
+                        ts.createAsExpression(node.expression, _createAnyTypeNode()), node.name).expression;
+                }
+            }
+        }
+    });
+}
+
+function _thisSignature(sourceFile: ts.SourceFile, typeChecker: ts.TypeChecker) {
+    _forEach(sourceFile, (node) => {
+        if (ts.isElementAccessExpression(node) &&
+            node.expression.kind == ts.SyntaxKind.ThisKeyword) {
+            console.log(`Process this[${node.argumentExpression.getText()}]`);
+            node.expression = ts.createElementAccess(
+                ts.createAsExpression(node.expression, _createAnyTypeNode()), node.argumentExpression).expression;
+        }
+    });
 }
 
 function _extractSchema(sourceFile: ts.SourceFile, typeChecker: ts.TypeChecker) {
