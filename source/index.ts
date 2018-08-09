@@ -3,7 +3,7 @@ import * as path from 'path';
 import mkdirp from 'mkdirp';
 import * as ts from 'typescript';
 
-function main(inputDir: string, outputDir: string) {
+function main(inputDir: string, outputDir: string, ...singleFiles: string[]) {
     let rootDir = inputDir;
 
     let forEachFile = (dir: string, extension: string, fx: (file: string) => void) => {
@@ -19,8 +19,7 @@ function main(inputDir: string, outputDir: string) {
         }
     };
 
-    let files: string[] = [];
-    forEachFile(inputDir, ".js", (file) => {
+    let copyAsTs = (file: string) => {
         let input = path.resolve(inputDir, file);
         let output = path.resolve(outputDir, file);
         output = output.replace(".js", ".ts");
@@ -28,7 +27,13 @@ function main(inputDir: string, outputDir: string) {
         mkdirp.sync(outputParentDir);
         files.push(output);
         fs.copyFileSync(input, output);
-    });
+    }
+
+    let files: string[] = [];
+    for (let singleFile of singleFiles) {
+        copyAsTs(singleFile);
+    }
+    forEachFile(inputDir, ".js", copyAsTs);
 
     let printer = ts.createPrinter({
         newLine: ts.NewLineKind.LineFeed
@@ -639,4 +644,5 @@ if (process.argv.length < 4) {
 
 let inputPath = process.argv[2];
 let outputPath = process.argv[3];
-main(inputPath, outputPath);
+let singleFiles = process.argv.splice(4);
+main(inputPath, outputPath, ...singleFiles);

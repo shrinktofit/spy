@@ -11,7 +11,8 @@
             "program": "${workspaceFolder}\\out\\index.js",
             "args": [
                 "E:\\Repos\\Cocos\\engine-3d\\lib",
-                "E:\\Tmp\\engine-3d\\lib"
+                "E:\\Tmp\\engine-3d\\lib",
+                "..\\index.js"
             ],
             "outFiles": [
                 "${workspaceFolder}/**/*.js"
