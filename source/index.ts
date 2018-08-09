@@ -2,7 +2,6 @@ import * as fs from 'fs';
 import * as path from 'path';
 import mkdirp from 'mkdirp';
 import * as ts from 'typescript';
-import 'typescript/'
 
 function main(inputDir: string, outputDir: string) {
     let rootDir = inputDir;
@@ -46,10 +45,23 @@ function main(inputDir: string, outputDir: string) {
             { name: "Make explicit any", method: _explicitAny }
         ],
         [
+            { name: "Context this", method: _contextThis },
             { name: "This index signature", method: _thisSignature },
-            { name: "Document & Window", method: _documentWindow }
+            { name: "Document & Window", method: _documentWindow },
+            { name: "Boolean Computed Property Name", method: _booleanComputedPropertyName },
+        ],
+        [
+            { name: "Supply Args", method: _supplyArgs }
         ]
     ];
+
+    let logDir = 'logs';
+    mkdirp.sync(logDir);
+    for (let pass of passes) {
+        for (let task of pass) {
+            (task as any)._stream = fs.openSync(`logs/${task.name}.txt`, 'w');
+        }
+    }
 
     for (let pass of passes) {
         let program = ts.createProgram(files, {});
@@ -61,14 +73,34 @@ function main(inputDir: string, outputDir: string) {
                 continue;
             }
 
-            console.log(`\n==== ${path.relative(outputDir, sourceFile.fileName)} ====\n`);
-
             for (let task of pass) {
-                console.log(`* ${task.name}`);
+                let oldStdout = console.log;
+
+                let fd = (task as any)._stream as number;
+                let inited = false;
+                console.log = (str: string) => {
+                    if (!inited) {
+                        inited = true;
+                        if (sourceFile) {
+                            console.log(`\n* ${path.relative(outputDir, sourceFile.fileName)}\n`);
+                        }
+                    }
+                    fs.writeSync(fd, str);
+                    fs.writeSync(fd, `\n`);
+                };
+
                 task.method(sourceFile, typeChecker);
+
+                console.log = oldStdout;
             }
 
             fs.writeFileSync(sourceFile.fileName, printer.printFile(sourceFile));
+        }
+    }
+
+    for (let pass of passes) {
+        for (let task of pass) {
+            fs.closeSync((task as any)._stream as number);
         }
     }
 }
@@ -147,7 +179,11 @@ function _documentWindow(sourceFile: ts.SourceFile, typeChecker: ts.TypeChecker)
     forbidMap.set("document", ["mozPointerLockElement"]);
     forbidMap.set("window", [
         "XMLHttpRequest",
-        "ActiveXObject"
+        "ActiveXObject",
+
+        "AudioContext",
+        "webkitAudioContext",
+        "mozAudioContext",
     ]);
     _forEach(sourceFile, (node) => {
         if (ts.isPropertyAccessExpression(node) &&
@@ -168,9 +204,140 @@ function _thisSignature(sourceFile: ts.SourceFile, typeChecker: ts.TypeChecker) 
     _forEach(sourceFile, (node) => {
         if (ts.isElementAccessExpression(node) &&
             node.expression.kind == ts.SyntaxKind.ThisKeyword) {
+
+            {
+                let n: ts.Node = node;
+                while (n && !ts.isSourceFile(n)) {
+                    if (ts.isFunctionDeclaration(n)) {
+                        console.log(`Skip this[] in function expression`);
+                        return;
+                    } else if (ts.isMethodDeclaration(n)) {
+                        break;
+                    }
+                    n = n.parent;
+                }
+            }
+
             console.log(`Process this[${node.argumentExpression.getText()}]`);
             node.expression = ts.createElementAccess(
                 ts.createAsExpression(node.expression, _createAnyTypeNode()), node.argumentExpression).expression;
+        }
+    });
+}
+
+function _contextThis(sourceFile: ts.SourceFile, typeChecker: ts.TypeChecker) {
+    // DO IT: SKIP THIS OF ENCLOSING CLASS EXPRESSION
+    _forEach(sourceFile, (funcexpr) => {
+        if (ts.isFunctionExpression(funcexpr)) {
+            let found = false;
+            _forEach(funcexpr, (node) => {
+                if (node.kind == ts.SyntaxKind.ThisKeyword) {
+                    found = true;
+                }
+            });
+            if (found) {
+                console.log(`Found context this.`);
+                let thisParam = ts.createParameter(
+                    undefined,
+                    undefined,
+                    undefined,
+                    "this",
+                    undefined,
+                    _createAnyTypeNode(),
+                    undefined
+                );
+                let newParams = [thisParam].concat(funcexpr.parameters.slice());
+                funcexpr.parameters = ts.createNodeArray(newParams);
+            }
+        }
+    });
+}
+
+function _booleanComputedPropertyName(sourceFile: ts.SourceFile, typeChecker: ts.TypeChecker) {
+    _forEach(sourceFile, (node) => {
+        if (ts.isObjectLiteralExpression(node)) {
+            for (let property of node.properties) {
+                if (property.name && ts.isComputedPropertyName(property.name)) {
+                    let expr = property.name.expression;
+                    if (expr.kind == ts.SyntaxKind.TrueKeyword ||
+                        expr.kind == ts.SyntaxKind.FalseKeyword) {
+                        console.log("Found computed property name of boolean literal");
+                        property.name.expression = ts.createStringLiteral(expr.kind == ts.SyntaxKind.TrueKeyword ? "true" : "false");
+                    }
+                }
+            }
+        }
+    });
+}
+
+function _supplyArgs(sourceFile: ts.SourceFile, typeChecker: ts.TypeChecker) {
+    _forEach(sourceFile, (node) => {
+        if (ts.isCallExpression(node) || ts.isNewExpression(node)) {
+            let params: ts.NodeArray<ts.ParameterDeclaration> | undefined = undefined;
+            let functype = typeChecker.getTypeAtLocation(node.expression);
+            if (functype) {
+                if (functype.symbol) {
+                    let fundecl = functype.symbol.valueDeclaration;
+                    if (fundecl) {
+                        if (ts.isFunctionDeclaration(fundecl) ||
+                            ts.isMethodDeclaration(fundecl)) {
+                            params = fundecl.parameters;
+                        } else if (ts.isClassDeclaration(fundecl)) {
+                            for (let member of fundecl.members) {
+                                if (ts.isConstructorDeclaration(member)) {
+                                    params = member.parameters;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (params) {
+                let args: ts.NodeArray<ts.Expression> | undefined = undefined;
+                if (node as ts.NewExpression) {
+                    let x = node as ts.NewExpression;
+                    args = x.arguments;
+                } else {
+                    let x = node as ts.CallExpression;
+                    args = x.arguments;
+                }
+
+                let nExpectedArgs = 0;
+                for (let i = params.length - 1; i >= 0; --i) {
+                    if (!params[i].initializer && !params[i].questionToken) {
+                        nExpectedArgs = i + 1;
+                        break;
+                    }
+                }
+
+                if (nExpectedArgs == 0 && !args) {
+                    return;
+                }
+
+                let nNewArgs = nExpectedArgs - (args ? args.length : 0);
+                if (nNewArgs > 0) {
+                    if (!args) {
+                        args = ts.createNodeArray();
+                    }
+
+                    let newArgs = new Array(nNewArgs);
+                    for (let i = 0; i < newArgs.length; ++i) {
+                        // DO IT: should be undefined
+                        newArgs[i] = ts.createNull();
+                    }
+                    args = ts.createNodeArray(args.slice().concat(newArgs));
+                    if (node as ts.NewExpression) {
+                        let x = node as ts.NewExpression;
+                        x.arguments = args;
+                    } else {
+                        let x = node as ts.CallExpression;
+                        x.arguments = args;
+                    }
+
+                    console.log(`Found: ${node.getText()} lack of ${newArgs.length} arguments.`);
+                }
+            }
         }
     });
 }
@@ -335,10 +502,10 @@ function _injectOldStyleClassMember(sourceFile: ts.SourceFile, typeChecker: ts.T
                                     ));
                                     _removeStmtFromSourceFile(stmt, node.parent);
                                 }
-                                console.log(`Old-style ${node.name.text}.${stmt.expression.left.name.text}`);
+                                console.log(`${node.name.text}.${stmt.expression.left.name.text}`);
                             }
                         } else {
-                            console.log(`Warning: .${stmt.expression.left.name.text}'s class not expected`);
+                            console.log(`Warning: ${stmt.expression.left.name.text}'s class not expected`);
                         }
                     }
                 }
