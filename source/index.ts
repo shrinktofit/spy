@@ -276,6 +276,8 @@ function _booleanComputedPropertyName(sourceFile: ts.SourceFile, typeChecker: ts
 }
 
 function _supplyArgs(sourceFile: ts.SourceFile, typeChecker: ts.TypeChecker) {
+    //let need = false;
+    //let undefinedID = "__SPY_UNDEFINED__";
     _forEach(sourceFile, (node) => {
         if (ts.isCallExpression(node) || ts.isNewExpression(node)) {
             let params: ts.NodeArray<ts.ParameterDeclaration> | undefined = undefined;
@@ -300,12 +302,10 @@ function _supplyArgs(sourceFile: ts.SourceFile, typeChecker: ts.TypeChecker) {
 
             if (params) {
                 let args: ts.NodeArray<ts.Expression> | undefined = undefined;
-                if (node as ts.NewExpression) {
-                    let x = node as ts.NewExpression;
-                    args = x.arguments;
+                if (ts.isNewExpression(node)) {
+                    args = node.arguments;
                 } else {
-                    let x = node as ts.CallExpression;
-                    args = x.arguments;
+                    args = node.arguments;
                 }
 
                 let nExpectedArgs = 0;
@@ -322,22 +322,22 @@ function _supplyArgs(sourceFile: ts.SourceFile, typeChecker: ts.TypeChecker) {
 
                 let nNewArgs = nExpectedArgs - (args ? args.length : 0);
                 if (nNewArgs > 0) {
+                    //need = true;
                     if (!args) {
                         args = ts.createNodeArray();
                     }
 
                     let newArgs = new Array(nNewArgs);
                     for (let i = 0; i < newArgs.length; ++i) {
-                        // DO IT: should be undefined
-                        newArgs[i] = ts.createNull();
+                        newArgs[i] = ts.parseIsolatedEntityName("undefined", ts.ScriptTarget.Latest);
+                        newArgs[i].parent = ts.createStringLiteral("");
                     }
                     args = ts.createNodeArray(args.slice().concat(newArgs));
-                    if (node as ts.NewExpression) {
-                        let x = node as ts.NewExpression;
-                        x.arguments = args;
+
+                    if (ts.isNewExpression(node)) {
+                        node.arguments = ts.createNew(node.expression, node.typeArguments, args).arguments;
                     } else {
-                        let x = node as ts.CallExpression;
-                        x.arguments = args;
+                        node.arguments = ts.createCall(node.expression, node.typeArguments, args).arguments;
                     }
 
                     console.log(`Found: ${node.getText()} lack of ${newArgs.length} arguments.`);
@@ -345,6 +345,18 @@ function _supplyArgs(sourceFile: ts.SourceFile, typeChecker: ts.TypeChecker) {
             }
         }
     });
+
+    // if (need) {
+    //     sourceFile.statements = ts.createNodeArray(
+    //         sourceFile.statements.slice().concat([
+    //             ts.createVariableStatement(
+    //                 undefined,
+    //                 [ts.createVariableDeclaration(
+    //                     undefinedID,
+    //                     ts.createKeywordTypeNode(ts.SyntaxKind.AnyKeyword),
+    //                     undefined)])
+    //         ]));
+    // }
 }
 
 function _extractSchema(sourceFile: ts.SourceFile, typeChecker: ts.TypeChecker) {
@@ -365,20 +377,29 @@ function _extractSchema(sourceFile: ts.SourceFile, typeChecker: ts.TypeChecker) 
             let setterBody: ts.Block | undefined = undefined;
             let setterParam: ts.NodeArray<ts.ParameterDeclaration> | undefined = undefined;
 
+            let newProps = [];
             for (let prop of member.properties) {
+                let isgetset = false;
                 if (ts.isMethodDeclaration(prop) && ts.isIdentifier(prop.name)) {
                     if (prop.name.text == "get") {
                         getterBody = prop.body;
+                        isgetset = true;
                     } else if (prop.name.text == "set") {
                         setterBody = prop.body;
                         setterParam = prop.parameters;
+                        isgetset = true;
                     }
                 } else if (ts.isPropertyAssignment(prop) && ts.isIdentifier(prop.name)) {
                     if (prop.name.text == "type") {
                     } else if (prop.name.text == "default") {
                     }
                 }
+                if (!isgetset) {
+                    newProps.push(prop);
+                }
             }
+
+            member.properties = ts.createNodeArray(newProps);
 
             if (!getterBody) {
                 getterBody = ts.createBlock([ts.createReturn(
@@ -454,12 +475,14 @@ function _extractSchema(sourceFile: ts.SourceFile, typeChecker: ts.TypeChecker) 
             }
         }
 
-        if (schemaExpr.parent &&
-            schemaExpr.parent.parent &&
-            ts.isExpressionStatement(schemaExpr.parent) &&
-            ts.isSourceFile(schemaExpr.parent.parent)) {
-            _removeStmtFromSourceFile(schemaExpr.parent, schemaExpr.parent.parent);
-        }
+        //schemaExpr.left = ts.createAsExpression(schemaExpr.left, _createAnyTypeNode());
+
+        // if (schemaExpr.parent &&
+        //     schemaExpr.parent.parent &&
+        //     ts.isExpressionStatement(schemaExpr.parent) &&
+        //     ts.isSourceFile(schemaExpr.parent.parent)) {
+        //     _removeStmtFromSourceFile(schemaExpr.parent, schemaExpr.parent.parent);
+        // }
     });
 }
 
@@ -645,4 +668,12 @@ if (process.argv.length < 4) {
 let inputPath = process.argv[2];
 let outputPath = process.argv[3];
 let singleFiles = process.argv.splice(4);
+// let inputPath = String.raw`E:\Tmp\guagua`;
+// let outputPath = String.raw`E:\Tmp\gua`;
+// let singleFiles = [String.raw`..\test.js`];
+
+//let sf = ts.createSourceFile("", "Math.random(undefined);", ts.ScriptTarget.Latest);
+// let ud = ts.parseIsolatedEntityName("undefined", ts.ScriptTarget.Latest);
+//console.log(sf);
+
 main(inputPath, outputPath, ...singleFiles);
