@@ -1,5 +1,5 @@
 /node_modules
 /out
 /logs
-/.vscode/settings.json
+/.vscode
 package-lock.json
