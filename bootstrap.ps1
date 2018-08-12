@@ -60,6 +60,7 @@ copyDir "tests"
 copyFile "package.json"
 copyDir "lib\builtin\effects"
 copyDir "lib\renderer\shaders"
+&Robocopy.exe .\resource\engine-3d-ts $outputPath /e
 
 Write-Host "Finished."
 

@@ -1,0 +1,19 @@
+{
+  "name": "engine-3d-ts",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "directories": {
+    "lib": "lib"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@types/cannon": "^0.1.2",
+    "@types/node": "^10.5.8",
+    "cannon": "^0.6.2"
+  }
+}
