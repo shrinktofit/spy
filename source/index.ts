@@ -3,13 +3,29 @@ import * as path from 'path';
 import mkdirp from 'mkdirp';
 import * as ts from 'typescript';
 
-function main(inputDir: string, outputDir: string, ...singleFiles: string[]) {
+function main(inputDir: string, outputDir: string, ...excludePaths: string[]) {
+    let excludes: string[] = [];
+    excludePaths.forEach((p) => {
+        excludes.push(path.join(inputDir, p));
+    });
+    let isExcluded = (p: string) => {
+        for (let ep of excludes) {
+            if (p.startsWith(ep)) {
+                return true;
+            }
+        }
+        return false;
+    };
+
     let rootDir = inputDir;
 
     let forEachFile = (dir: string, extension: string, fx: (file: string) => void) => {
         let entries = fs.readdirSync(dir);
         for (let entry of entries) {
             entry = path.resolve(dir, entry);
+            if (isExcluded(entry)) {
+                continue;
+            }
             let stat = fs.statSync(entry);
             if (stat && stat.isDirectory()) {
                 forEachFile(entry, extension, fx);
@@ -19,6 +35,7 @@ function main(inputDir: string, outputDir: string, ...singleFiles: string[]) {
         }
     };
 
+    let files: string[] = [];
     let copyAsTs = (file: string) => {
         let input = path.resolve(inputDir, file);
         let output = path.resolve(outputDir, file);
@@ -29,10 +46,6 @@ function main(inputDir: string, outputDir: string, ...singleFiles: string[]) {
         fs.copyFileSync(input, output);
     }
 
-    let files: string[] = [];
-    for (let singleFile of singleFiles) {
-        copyAsTs(singleFile);
-    }
     forEachFile(inputDir, ".js", copyAsTs);
 
     let printer = ts.createPrinter({
@@ -667,13 +680,6 @@ if (process.argv.length < 4) {
 
 let inputPath = process.argv[2];
 let outputPath = process.argv[3];
-let singleFiles = process.argv.splice(4);
-// let inputPath = String.raw`E:\Tmp\guagua`;
-// let outputPath = String.raw`E:\Tmp\gua`;
-// let singleFiles = [String.raw`..\test.js`];
+let excludePaths = process.argv.splice(4);
 
-//let sf = ts.createSourceFile("", "Math.random(undefined);", ts.ScriptTarget.Latest);
-// let ud = ts.parseIsolatedEntityName("undefined", ts.ScriptTarget.Latest);
-//console.log(sf);
-
-main(inputPath, outputPath, ...singleFiles);
+main(inputPath, outputPath, ...excludePaths);

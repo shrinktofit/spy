@@ -32,9 +32,14 @@ $content = @"
             "name": "Æô¶¯³ÌÐò",
             "program": "`${workspaceFolder}\\out\\index.js",
             "args": [
-                "$inputPath\\lib",
-                "$outputPath\\lib",
-                "..\\index.js"
+                "$inputPath",
+                "$outputPath",
+                "script\\rollup.config.js",
+                "script\\rollup-mappings.config.js",
+                "examples",
+                "tests",
+                "node_modules",
+                "dist"
             ],
             "outFiles": [
                 "`${workspaceFolder}/**/*.js"
@@ -54,13 +59,14 @@ function copyFile($fileName, $relativePath = ".") {
     &Robocopy.exe $inputPath/$relativePath $outputPath/js/$relativePath $fileName
 }
 
+copyFile "script\rollup.config.js"
+copyFile "script\rollup-mappings.config.js"
 copyDir "examples"
-copyDir "script"
 copyDir "tests"
-copyFile "package.json"
 copyDir "lib\builtin\effects"
 copyDir "lib\renderer\shaders"
-&Robocopy.exe .\resource\engine-3d-ts $outputPath /e
+##copyFile "package.json"
+##&Robocopy.exe .\resource\engine-3d-ts $outputPath /e
 
 Write-Host "Finished."
 
