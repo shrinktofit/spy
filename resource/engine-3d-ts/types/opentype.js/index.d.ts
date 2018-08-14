@@ -1,1 +1,3 @@
-export function parse(...args: any[]): any;
+declare module "opentype.js" {
+    function parse(...args: any[]): any;
+}
