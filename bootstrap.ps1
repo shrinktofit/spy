@@ -34,6 +34,8 @@ $content = @"
             "args": [
                 "$inputPath",
                 "$outputPath",
+                "lib\\builtin\\effects",
+                "lib\\renderer\\shaders",
                 "script\\rollup.config.js",
                 "script\\rollup-mappings.config.js",
                 "examples",
@@ -51,22 +53,20 @@ $content = @"
 
 [System.IO.File]::WriteAllLines(".vscode/launch.json", $content)
 
-function copyDir($relativePath) {
-    &Robocopy.exe $inputPath/$relativePath $outputPath/js/$relativePath /e
+function copyDir($relativePath, $include) {
+    "&Robocopy.exe $inputPath/$relativePath $outputPath/$relativePath $include /e"
+    &Robocopy.exe $inputPath/$relativePath $outputPath/$relativePath $include /e
 }
 
 function copyFile($fileName, $relativePath = ".") {
-    &Robocopy.exe $inputPath/$relativePath $outputPath/js/$relativePath $fileName
+    &Robocopy.exe $inputPath/$relativePath $outputPath/$relativePath $fileName
 }
 
-copyFile "script\rollup.config.js"
-copyFile "script\rollup-mappings.config.js"
 copyDir "examples"
 copyDir "tests"
-copyDir "lib\builtin\effects"
-copyDir "lib\renderer\shaders"
-##copyFile "package.json"
-##&Robocopy.exe .\resource\engine-3d-ts $outputPath /e
+copyDir "lib\builtin\effects" -include @("*.json")
+copyDir "lib\renderer\shaders" -include @("*.frag", "*.vert", "*.json")
+&Robocopy.exe ".\resource\engine-3d-ts" $outputPath /e
 
 Write-Host "Finished."
 

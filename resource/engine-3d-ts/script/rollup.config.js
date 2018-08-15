@@ -35,8 +35,13 @@ module.exports = {
       main: true,
       root: process.cwd()
     }),
-    commonjs(),
-    typescript({ check: false})
+    commonjs({
+      namedExports: {
+        'cannon': ['Body', 'Vec3', 'Box', 'Sphere', 'Shape', 'World']
+      }
+    }),
+    typescript({ check: false}),
+    buble(),
   ],
   output: [
     {
