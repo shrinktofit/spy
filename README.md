@@ -13,13 +13,13 @@ A tool to transform Cocos 3D project from ECMAScript to Typescript.
 
 ### Step 1
 
-Under root directory this reposity,
+Under root directory of this reposity,
 excutes the Powershell script `bootstrap.ps1`.
 
 This script would let you select two path:
 
-1. input path - The path to Cocos 3D reposity.
-2. output path - The path to where you want to put the generated project into.
+1. input path - Cocos 3D reposity's root directory.
+2. output path - The generated project's root directory.
 
 This step would copy files that
 no needs to convert to Typescript format to output directory.
@@ -58,7 +58,7 @@ Typescript file with extension replaced `js` by `ts`.
 
 #### Detail
 
-The following operations are performed in turn on these Javascript files.
+The following operations are in turn performed on these Javascript files.
 
 ##### Process schemas
 
@@ -78,7 +78,7 @@ are consider as schema declaration of Cocos 3D.
 
 Foreach schema declaration, this tool will
 remove the `get` and `set` from the object literal
-and move them as `x`'s getter or setter.
+and insert them into `x` as `x`'s getter or setter.
 Remain content of the object literal are keeped unchangely.
 
 ##### Inject old-style class member function
