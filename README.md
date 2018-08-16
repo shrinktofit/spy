@@ -11,6 +11,12 @@ A tool to transform Cocos 3D project from ECMAScript to Typescript.
 
 ## Usage
 
+### Prepare
+
+* Clone this reposity;
+
+* Clone reposity [A fork of engine-3d](https://github.com/shrinktofit/engine-3d) and checkout to the `spy-opt` branch.
+
 ### Step 1
 
 Under root directory of this reposity,
