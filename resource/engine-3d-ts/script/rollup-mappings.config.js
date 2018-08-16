@@ -24,7 +24,7 @@ module.exports = {
       main: false,
       root: process.cwd()
     }),
-    typescript(/*{ plugin options }*/)
+    typescript({check: false})
   ],
   output: [
     {

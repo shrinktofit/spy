@@ -40,8 +40,7 @@ module.exports = {
         'cannon': ['Body', 'Vec3', 'Box', 'Sphere', 'Shape', 'World']
       }
     }),
-    typescript({ check: false}),
-    buble(),
+    typescript({check: false})
   ],
   output: [
     {

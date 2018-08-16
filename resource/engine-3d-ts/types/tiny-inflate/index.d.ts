@@ -1,1 +1,0 @@
-export function tinf_uncompress(...args: any[]): any;
